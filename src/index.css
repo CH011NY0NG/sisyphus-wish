@@ -1,21 +1,10 @@
 :root {
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #191f28;
-  background: #ffffff;
+  background: #f2f4f6;
 }
 
 * {
   -webkit-tap-highlight-color: transparent;
-}
-
-body {
-  min-width: 320px;
-  min-height: 100vh;
-  margin: 0;
-}
-
-input,
-button {
-  font: inherit;
 }
