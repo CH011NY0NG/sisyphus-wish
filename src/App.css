@@ -39,6 +39,14 @@ button {
   width: 100%;
   aspect-ratio: 4 / 3;
   background: #f2f4f6;
+  cursor: grab;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.scene-area canvas {
+  display: block;
+  touch-action: none;
 }
 
 .content-area {
