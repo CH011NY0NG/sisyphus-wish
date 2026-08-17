@@ -124,11 +124,6 @@ export default function Scene() {
 
       <MountainRange />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-        <planeGeometry args={[420, 420]} />
-        <meshStandardMaterial color="#e2e6ea" roughness={1} />
-      </mesh>
-
       <ContactShadows
         position={[0, 0.02, 0]}
         opacity={0.38}
