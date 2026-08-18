@@ -20,7 +20,7 @@ const WALL_MID = new THREE.Color("#f0f2f5");
 const WALL_HIGH = new THREE.Color("#ffffff");
 
 function ridge(): number {
-  return 17;
+  return 13;
 }
 
 function elevationAt(x: number): number {

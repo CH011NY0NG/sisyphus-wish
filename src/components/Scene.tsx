@@ -4,8 +4,12 @@ import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
 
-const MIN_X = -80;
+const MOUNTAIN_LEFT = -80;
 const MAX_X = 56;
+const CAMERA_Z = 42;
+const MOUNTAIN_FRONT_Z = 8.5;
+const CAMERA_Y =
+  (CAMERA_Z - MOUNTAIN_FRONT_Z) * Math.tan(THREE.MathUtils.degToRad(44 / 2));
 
 function CameraRig() {
   const { camera, gl } = useThree();
@@ -13,6 +17,8 @@ function CameraRig() {
   const current = useRef(0);
   const vel = useRef(0);
   const dragging = useRef(false);
+  const minX = useRef(MOUNTAIN_LEFT + 1);
+  const initialized = useRef(false);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -41,7 +47,7 @@ function CameraRig() {
       const dx = e.clientX - startX;
       target.current = THREE.MathUtils.clamp(
         startCamX - dx * 0.14,
-        MIN_X,
+        minX.current,
         MAX_X,
       );
       const now = performance.now();
@@ -74,11 +80,23 @@ function CameraRig() {
   }, [gl]);
 
   useFrame((_, delta) => {
+    const halfW =
+      camera.position.z *
+      Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) *
+      (gl.domElement.clientWidth / gl.domElement.clientHeight);
+    minX.current = MOUNTAIN_LEFT + halfW;
+
+    if (!initialized.current) {
+      initialized.current = true;
+      target.current = minX.current;
+      current.current = minX.current;
+    }
+
     if (!dragging.current) {
       if (Math.abs(vel.current) > 0.05) {
         target.current = THREE.MathUtils.clamp(
           target.current + vel.current,
-          MIN_X,
+          minX.current,
           MAX_X,
         );
         vel.current *= Math.pow(0.92, delta * 60);
@@ -88,10 +106,11 @@ function CameraRig() {
     }
 
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
+    current.current = THREE.MathUtils.clamp(current.current, minX.current, MAX_X);
 
     camera.position.x = current.current;
-    camera.position.y = 22;
-    camera.position.z = 42;
+    camera.position.y = CAMERA_Y;
+    camera.position.z = CAMERA_Z;
     camera.rotation.set(0, 0, 0);
   });
 
@@ -103,7 +122,7 @@ export default function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [0, 22, 42], fov: 44, near: 0.1, far: 600 }}
+      camera={{ position: [0, CAMERA_Y, CAMERA_Z], fov: 44, near: 0.1, far: 600 }}
     >
       <color attach="background" args={["#eef0f2"]} />
       <fog attach="fog" args={["#eef0f2", 90, 260]} />
