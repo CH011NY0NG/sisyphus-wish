@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { fbm, mulberry32 } from "../lib/noise";
+import { fbm } from "../lib/noise";
 
 const LENGTH = 160;
 const ORIGINAL_HALF_DEPTH = 17;
@@ -8,7 +8,8 @@ const DEPTH = 17;
 const CUT_HALF_DEPTH = DEPTH / 2;
 const X_SEG = 128;
 const Z_SEG = 20;
-const MAX_HEIGHT = 26;
+const MAX_HEIGHT = 50;
+const PEAK_AT_END = 44;
 
 const COLOR_LOW = new THREE.Color("#ffffff");
 const COLOR_MID = new THREE.Color("#ffffff");
@@ -18,10 +19,12 @@ const WALL_LOW = new THREE.Color("#d9dde3");
 const WALL_MID = new THREE.Color("#f0f2f5");
 const WALL_HIGH = new THREE.Color("#ffffff");
 
-const BOULDER_COLORS = ["#cfd4da", "#e3e7eb", "#b9c0c9", "#d9dde2", "#c3c9d0"];
-
 function ridge(): number {
-  return 24;
+  return 17;
+}
+
+function elevationAt(x: number): number {
+  return ((x + LENGTH / 2) / LENGTH) * PEAK_AT_END - ridge();
 }
 
 function heightAt(x: number, z: number): number {
@@ -32,7 +35,7 @@ function heightAt(x: number, z: number): number {
   );
   const detail = fbm(x * 0.2, z * 0.2, 4) * 4.2;
   const fine = fbm(x * 0.55 + 12, z * 0.55 + 4, 3) * 1.6;
-  const h = falloff * (ridge() + detail + fine);
+  const h = elevationAt(x) + falloff * (ridge() + detail + fine);
   return THREE.MathUtils.clamp(h, 0, MAX_HEIGHT);
 }
 
@@ -116,41 +119,10 @@ function buildCutWallGeometry(zSign: 1 | -1): THREE.BufferGeometry {
   return geo;
 }
 
-type Boulder = {
-  position: [number, number, number];
-  scale: [number, number, number];
-  color: string;
-  detail: number;
-};
-
-function buildBoulders(): Boulder[] {
-  const rand = mulberry32(7);
-  const boulders: Boulder[] = [];
-  const count = 24;
-
-  for (let i = 0; i < count; i++) {
-    const x = (rand() - 0.5) * (LENGTH - 10);
-    const z = (rand() - 0.5) * (DEPTH - 8);
-    const s = 0.7 + rand() * 1.7;
-    const h = heightAt(x, z);
-    if (h > 2.5) continue;
-
-    boulders.push({
-      position: [x, s * 0.28, z],
-      scale: [s, s * (0.7 + rand() * 0.6), s * (0.7 + rand() * 0.5)],
-      color: BOULDER_COLORS[Math.floor(rand() * BOULDER_COLORS.length)],
-      detail: Math.floor(rand() * 2),
-    });
-  }
-
-  return boulders;
-}
-
 export default function MountainRange() {
   const geometry = useMemo(() => buildMountainGeometry(), []);
   const wallNeg = useMemo(() => buildCutWallGeometry(-1), []);
   const wallPos = useMemo(() => buildCutWallGeometry(1), []);
-  const boulders = useMemo(() => buildBoulders(), []);
 
   return (
     <group>
@@ -180,24 +152,6 @@ export default function MountainRange() {
           metalness={0}
         />
       </mesh>
-
-      {boulders.map((b, i) => (
-        <mesh
-          key={i}
-          position={b.position}
-          scale={b.scale}
-          castShadow
-          receiveShadow
-        >
-          <icosahedronGeometry args={[1, b.detail]} />
-          <meshStandardMaterial
-            color={b.color}
-            flatShading
-            roughness={1}
-            metalness={0}
-          />
-        </mesh>
-      ))}
     </group>
   );
 }

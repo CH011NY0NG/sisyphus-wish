@@ -4,7 +4,7 @@ import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
 
-const MIN_X = -56;
+const MIN_X = -80;
 const MAX_X = 56;
 
 function CameraRig() {
@@ -90,8 +90,9 @@ function CameraRig() {
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
 
     camera.position.x = current.current;
-    camera.position.y = 31;
-    camera.rotation.set(-0.262, 0, 0);
+    camera.position.y = 22;
+    camera.position.z = 42;
+    camera.rotation.set(0, 0, 0);
   });
 
   return null;
@@ -102,7 +103,7 @@ export default function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [0, 31, 42], fov: 44, near: 0.1, far: 600 }}
+      camera={{ position: [0, 22, 42], fov: 44, near: 0.1, far: 600 }}
     >
       <color attach="background" args={["#eef0f2"]} />
       <fog attach="fog" args={["#eef0f2", 90, 260]} />
