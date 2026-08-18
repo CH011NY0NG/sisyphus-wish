@@ -90,8 +90,8 @@ function CameraRig() {
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
 
     camera.position.x = current.current;
-    camera.position.y = 14;
-    camera.rotation.set(-0.245, 0, 0);
+    camera.position.y = 31;
+    camera.rotation.set(-0.262, 0, 0);
   });
 
   return null;
@@ -102,15 +102,15 @@ export default function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [0, 14, 36], fov: 44, near: 0.1, far: 600 }}
+      camera={{ position: [0, 31, 42], fov: 44, near: 0.1, far: 600 }}
     >
       <color attach="background" args={["#eef0f2"]} />
       <fog attach="fog" args={["#eef0f2", 90, 260]} />
 
-      <ambientLight intensity={0.95} />
+      <ambientLight intensity={0.4} />
       <directionalLight
         position={[24, 36, 26]}
-        intensity={1.3}
+        intensity={1.5}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-90}
@@ -120,13 +120,14 @@ export default function Scene() {
         shadow-camera-far={160}
         shadow-bias={-0.0004}
       />
-      <directionalLight position={[-30, 20, -20]} intensity={0.3} />
+      <directionalLight position={[-30, 20, -20]} intensity={0.25} />
+      <directionalLight position={[0, 30, 45]} intensity={0.3} />
 
       <MountainRange />
 
       <ContactShadows
         position={[0, 0.02, 0]}
-        opacity={0.38}
+        opacity={0.45}
         scale={180}
         blur={2.6}
         far={26}
