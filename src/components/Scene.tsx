@@ -2,13 +2,14 @@ import { useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
-import MountainRange from "./MountainRange";
+import MountainRange, { MOUNTAIN_LEFT } from "./MountainRange";
 
 const MAX_X = 56;
 const CAMERA_Z = 42;
-const MOUNTAIN_FRONT_Z = 8.5;
+const MOUNTAIN_FRONT_Z = 4.25;
 const CAMERA_Y =
   (CAMERA_Z - MOUNTAIN_FRONT_Z) * Math.tan(THREE.MathUtils.degToRad(44 / 2));
+const CAMERA_RISE = 0.13;
 
 function CameraRig() {
   const { camera, gl } = useThree();
@@ -86,7 +87,8 @@ function CameraRig() {
     current.current = Math.min(current.current, MAX_X);
 
     camera.position.x = current.current;
-    camera.position.y = CAMERA_Y;
+    camera.position.y =
+      CAMERA_Y + Math.max(0, current.current - MOUNTAIN_LEFT) * CAMERA_RISE;
     camera.position.z = CAMERA_Z;
     camera.rotation.set(0, 0, 0);
   });

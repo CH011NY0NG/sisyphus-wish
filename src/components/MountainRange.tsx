@@ -3,20 +3,21 @@ import * as THREE from "three";
 import { fbm } from "../lib/noise";
 
 const LENGTH = 160;
-const ORIGINAL_HALF_DEPTH = 17;
-const DEPTH = 17;
+const ORIGINAL_HALF_DEPTH = 8.5;
+const DEPTH = 8.5;
 const CUT_HALF_DEPTH = DEPTH / 2;
 const X_SEG = 128;
 const Z_SEG = 20;
 const MAX_HEIGHT = 50;
 const PEAK_AT_END = 44;
 
-const X_MIN = -70.03;
+const X_MIN = -71.35;
 const X_MAX = LENGTH / 2;
 const WIDTH = X_MAX - X_MIN;
 const CENTER = (X_MIN + X_MAX) / 2;
 
 export const MOUNTAIN_LEFT = X_MIN;
+export const MOUNTAIN_SLOPE = PEAK_AT_END / LENGTH;
 
 const COLOR_LOW = new THREE.Color("#ffffff");
 const COLOR_MID = new THREE.Color("#ffffff");
@@ -27,7 +28,7 @@ const WALL_MID = new THREE.Color("#f0f2f5");
 const WALL_HIGH = new THREE.Color("#ffffff");
 
 function ridge(): number {
-  return 13;
+  return 10;
 }
 
 function elevationAt(x: number): number {
