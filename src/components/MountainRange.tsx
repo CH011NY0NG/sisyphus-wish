@@ -11,6 +11,13 @@ const Z_SEG = 20;
 const MAX_HEIGHT = 50;
 const PEAK_AT_END = 44;
 
+const X_MIN = -70.03;
+const X_MAX = LENGTH / 2;
+const WIDTH = X_MAX - X_MIN;
+const CENTER = (X_MIN + X_MAX) / 2;
+
+export const MOUNTAIN_LEFT = X_MIN;
+
 const COLOR_LOW = new THREE.Color("#ffffff");
 const COLOR_MID = new THREE.Color("#ffffff");
 const COLOR_HIGH = new THREE.Color("#ffffff");
@@ -55,8 +62,9 @@ function surfaceColor(
 }
 
 function buildMountainGeometry(): THREE.BufferGeometry {
-  const geo = new THREE.PlaneGeometry(LENGTH, DEPTH, X_SEG, Z_SEG);
+  const geo = new THREE.PlaneGeometry(WIDTH, DEPTH, X_SEG, Z_SEG);
   geo.rotateX(-Math.PI / 2);
+  geo.translate(CENTER, 0, 0);
 
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const count = pos.count;
@@ -87,7 +95,7 @@ function buildCutWallGeometry(zSign: 1 | -1): THREE.BufferGeometry {
   const colors = new Float32Array((segments + 1) * 2 * 3);
 
   for (let i = 0; i <= segments; i++) {
-    const x = (i / segments - 0.5) * LENGTH;
+    const x = X_MIN + (i / segments) * WIDTH;
     const h = heightAt(x, zc);
     positions.push(x, 0, zc, x, h, zc);
     const colorTop = surfaceColor(x, zc, h, WALL_LOW, WALL_MID, WALL_HIGH);

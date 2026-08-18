@@ -4,7 +4,6 @@ import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
 
-const MOUNTAIN_LEFT = -80;
 const MAX_X = 56;
 const CAMERA_Z = 42;
 const MOUNTAIN_FRONT_Z = 8.5;
@@ -17,8 +16,6 @@ function CameraRig() {
   const current = useRef(0);
   const vel = useRef(0);
   const dragging = useRef(false);
-  const minX = useRef(MOUNTAIN_LEFT + 1);
-  const initialized = useRef(false);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -45,11 +42,7 @@ function CameraRig() {
     const onMove = (e: PointerEvent) => {
       if (!dragging.current) return;
       const dx = e.clientX - startX;
-      target.current = THREE.MathUtils.clamp(
-        startCamX - dx * 0.14,
-        minX.current,
-        MAX_X,
-      );
+      target.current = Math.min(startCamX - dx * 0.14, MAX_X);
       const now = performance.now();
       const dt = Math.max(1, now - lastT);
       vel.current = -((e.clientX - lastX) / dt) * 0.14 * 16.7;
@@ -80,25 +73,9 @@ function CameraRig() {
   }, [gl]);
 
   useFrame((_, delta) => {
-    const halfW =
-      camera.position.z *
-      Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) *
-      (gl.domElement.clientWidth / gl.domElement.clientHeight);
-    minX.current = MOUNTAIN_LEFT + halfW;
-
-    if (!initialized.current) {
-      initialized.current = true;
-      target.current = minX.current;
-      current.current = minX.current;
-    }
-
     if (!dragging.current) {
       if (Math.abs(vel.current) > 0.05) {
-        target.current = THREE.MathUtils.clamp(
-          target.current + vel.current,
-          minX.current,
-          MAX_X,
-        );
+        target.current = Math.min(target.current + vel.current, MAX_X);
         vel.current *= Math.pow(0.92, delta * 60);
       } else {
         vel.current = 0;
@@ -106,7 +83,7 @@ function CameraRig() {
     }
 
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
-    current.current = THREE.MathUtils.clamp(current.current, minX.current, MAX_X);
+    current.current = Math.min(current.current, MAX_X);
 
     camera.position.x = current.current;
     camera.position.y = CAMERA_Y;
