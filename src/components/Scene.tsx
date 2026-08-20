@@ -2,19 +2,26 @@ import { useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
-import MountainRange, { MOUNTAIN_LEFT } from "./MountainRange";
+import MountainRange from "./MountainRange";
 
-const MAX_X = 56;
+const MAX_X = 160;
 const CAMERA_Z = 42;
 const MOUNTAIN_FRONT_Z = 4.25;
 const CAMERA_Y =
   (CAMERA_Z - MOUNTAIN_FRONT_Z) * Math.tan(THREE.MathUtils.degToRad(44 / 2));
-const CAMERA_RISE = 0.13;
+
+function leftAlignedX(aspect: number): number {
+  const halfFovV = THREE.MathUtils.degToRad(44 / 2);
+  const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
+  return (CAMERA_Z - MOUNTAIN_FRONT_Z) * Math.tan(halfFovH);
+}
 
 function CameraRig() {
   const { camera, gl } = useThree();
-  const target = useRef(0);
-  const current = useRef(0);
+  const perspective = camera as THREE.PerspectiveCamera;
+  const aspectRef = useRef(perspective.aspect);
+  const target = useRef(leftAlignedX(aspectRef.current));
+  const current = useRef(leftAlignedX(aspectRef.current));
   const vel = useRef(0);
   const dragging = useRef(false);
 
@@ -42,8 +49,9 @@ function CameraRig() {
 
     const onMove = (e: PointerEvent) => {
       if (!dragging.current) return;
+      const minX = leftAlignedX(aspectRef.current);
       const dx = e.clientX - startX;
-      target.current = Math.min(startCamX - dx * 0.14, MAX_X);
+      target.current = THREE.MathUtils.clamp(startCamX - dx * 0.14, minX, MAX_X);
       const now = performance.now();
       const dt = Math.max(1, now - lastT);
       vel.current = -((e.clientX - lastX) / dt) * 0.14 * 16.7;
@@ -74,9 +82,14 @@ function CameraRig() {
   }, [gl]);
 
   useFrame((_, delta) => {
+    const minX = leftAlignedX(aspectRef.current);
     if (!dragging.current) {
       if (Math.abs(vel.current) > 0.05) {
-        target.current = Math.min(target.current + vel.current, MAX_X);
+        target.current = THREE.MathUtils.clamp(
+          target.current + vel.current,
+          minX,
+          MAX_X,
+        );
         vel.current *= Math.pow(0.92, delta * 60);
       } else {
         vel.current = 0;
@@ -84,11 +97,10 @@ function CameraRig() {
     }
 
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
-    current.current = Math.min(current.current, MAX_X);
+    current.current = THREE.MathUtils.clamp(current.current, minX, MAX_X);
 
     camera.position.x = current.current;
-    camera.position.y =
-      CAMERA_Y + Math.max(0, current.current - MOUNTAIN_LEFT) * CAMERA_RISE;
+    camera.position.y = CAMERA_Y;
     camera.position.z = CAMERA_Z;
     camera.rotation.set(0, 0, 0);
   });
@@ -123,6 +135,7 @@ export default function Scene() {
       <directionalLight position={[0, 30, 45]} intensity={0.3} />
 
       <MountainRange />
+
 
       <ContactShadows
         position={[0, 0.02, 0]}

@@ -8,16 +8,18 @@ const DEPTH = 8.5;
 const CUT_HALF_DEPTH = DEPTH / 2;
 const X_SEG = 128;
 const Z_SEG = 20;
-const MAX_HEIGHT = 50;
-const PEAK_AT_END = 44;
 
-const X_MIN = -71.35;
-const X_MAX = LENGTH / 2;
+const X_MIN = 0;
+const X_MAX = LENGTH;
 const WIDTH = X_MAX - X_MIN;
 const CENTER = (X_MIN + X_MAX) / 2;
 
+const START_HEIGHT = 0;
+const END_HEIGHT = 44;
+const RIDGE_AMPLITUDE = 8;
+
 export const MOUNTAIN_LEFT = X_MIN;
-export const MOUNTAIN_SLOPE = PEAK_AT_END / LENGTH;
+export const MOUNTAIN_SLOPE = (END_HEIGHT - START_HEIGHT) / WIDTH;
 
 const COLOR_LOW = new THREE.Color("#ffffff");
 const COLOR_MID = new THREE.Color("#ffffff");
@@ -27,12 +29,17 @@ const WALL_LOW = new THREE.Color("#d9dde3");
 const WALL_MID = new THREE.Color("#f0f2f5");
 const WALL_HIGH = new THREE.Color("#ffffff");
 
-function ridge(): number {
-  return 10;
+function elevationAt(x: number): number {
+  const t = (x - X_MIN) / WIDTH;
+  const base = START_HEIGHT + (END_HEIGHT - START_HEIGHT) * t;
+  const ridge =
+    (fbm(x * 0.045 + 7, 3.7, 4) - fbm(X_MIN * 0.045 + 7, 3.7, 4)) *
+    RIDGE_AMPLITUDE;
+  return base + ridge;
 }
 
-function elevationAt(x: number): number {
-  return ((x + LENGTH / 2) / LENGTH) * PEAK_AT_END - ridge();
+function wallTop(x: number): number {
+  return Math.max(0, elevationAt(x));
 }
 
 function heightAt(x: number, z: number): number {
@@ -41,10 +48,11 @@ function heightAt(x: number, z: number): number {
     Math.max(0, 1 - Math.abs(z) / ORIGINAL_HALF_DEPTH),
     0.75,
   );
+  const edgeFade = Math.max(0, 1 - Math.abs(z) / CUT_HALF_DEPTH);
   const detail = fbm(x * 0.2, z * 0.2, 4) * 4.2;
   const fine = fbm(x * 0.55 + 12, z * 0.55 + 4, 3) * 1.6;
-  const h = elevationAt(x) + falloff * (ridge() + detail + fine);
-  return THREE.MathUtils.clamp(h, 0, MAX_HEIGHT);
+  const h = elevationAt(x) + falloff * edgeFade * (detail + fine);
+  return Math.max(0, h);
 }
 
 function surfaceColor(
@@ -55,7 +63,7 @@ function surfaceColor(
   mid: THREE.Color,
   high: THREE.Color,
 ): THREE.Color {
-  const t = THREE.MathUtils.clamp(h / MAX_HEIGHT, 0, 1);
+  const t = THREE.MathUtils.clamp(h / END_HEIGHT, 0, 1);
   const color = new THREE.Color();
   color.copy(low).lerp(mid, Math.min(1, t * 1.6));
   color.lerp(high, Math.max(0, t - 0.4) * 1.2);
@@ -97,7 +105,7 @@ function buildCutWallGeometry(zSign: 1 | -1): THREE.BufferGeometry {
 
   for (let i = 0; i <= segments; i++) {
     const x = X_MIN + (i / segments) * WIDTH;
-    const h = heightAt(x, zc);
+    const h = wallTop(x);
     positions.push(x, 0, zc, x, h, zc);
     const colorTop = surfaceColor(x, zc, h, WALL_LOW, WALL_MID, WALL_HIGH);
     const colorBottom = surfaceColor(x, zc, 0, WALL_LOW, WALL_MID, WALL_HIGH);
