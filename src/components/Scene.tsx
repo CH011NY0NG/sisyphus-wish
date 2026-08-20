@@ -2,18 +2,21 @@ import { useEffect, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
-import MountainRange from "./MountainRange";
+import MountainRange, { MOUNTAIN_RIGHT } from "./MountainRange";
 
-const MAX_X = 160;
 const CAMERA_Z = 42;
 const MOUNTAIN_FRONT_Z = 4.25;
-const CAMERA_Y =
+const CAMERA_OFFSET_Y =
   (CAMERA_Z - MOUNTAIN_FRONT_Z) * Math.tan(THREE.MathUtils.degToRad(44 / 2));
 
 function leftAlignedX(aspect: number): number {
   const halfFovV = THREE.MathUtils.degToRad(44 / 2);
   const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
   return (CAMERA_Z - MOUNTAIN_FRONT_Z) * Math.tan(halfFovH);
+}
+
+function rightAlignedX(aspect: number): number {
+  return MOUNTAIN_RIGHT - leftAlignedX(aspect);
 }
 
 function CameraRig() {
@@ -50,8 +53,9 @@ function CameraRig() {
     const onMove = (e: PointerEvent) => {
       if (!dragging.current) return;
       const minX = leftAlignedX(aspectRef.current);
+      const maxX = Math.max(minX, rightAlignedX(aspectRef.current));
       const dx = e.clientX - startX;
-      target.current = THREE.MathUtils.clamp(startCamX - dx * 0.14, minX, MAX_X);
+      target.current = THREE.MathUtils.clamp(startCamX - dx * 0.14, minX, maxX);
       const now = performance.now();
       const dt = Math.max(1, now - lastT);
       vel.current = -((e.clientX - lastX) / dt) * 0.14 * 16.7;
@@ -83,12 +87,13 @@ function CameraRig() {
 
   useFrame((_, delta) => {
     const minX = leftAlignedX(aspectRef.current);
+    const maxX = Math.max(minX, rightAlignedX(aspectRef.current));
     if (!dragging.current) {
       if (Math.abs(vel.current) > 0.05) {
         target.current = THREE.MathUtils.clamp(
           target.current + vel.current,
           minX,
-          MAX_X,
+          maxX,
         );
         vel.current *= Math.pow(0.92, delta * 60);
       } else {
@@ -97,10 +102,10 @@ function CameraRig() {
     }
 
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
-    current.current = THREE.MathUtils.clamp(current.current, minX, MAX_X);
+    current.current = THREE.MathUtils.clamp(current.current, minX, maxX);
 
     camera.position.x = current.current;
-    camera.position.y = CAMERA_Y;
+    camera.position.y = CAMERA_OFFSET_Y;
     camera.position.z = CAMERA_Z;
     camera.rotation.set(0, 0, 0);
   });
@@ -113,7 +118,7 @@ export default function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [0, CAMERA_Y, CAMERA_Z], fov: 44, near: 0.1, far: 600 }}
+      camera={{ position: [0, CAMERA_OFFSET_Y, CAMERA_Z], fov: 44, near: 0.1, far: 600 }}
     >
       <color attach="background" args={["#eef0f2"]} />
       <fog attach="fog" args={["#eef0f2", 90, 260]} />

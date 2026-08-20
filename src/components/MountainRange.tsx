@@ -15,11 +15,20 @@ const WIDTH = X_MAX - X_MIN;
 const CENTER = (X_MIN + X_MAX) / 2;
 
 const START_HEIGHT = 0;
-const END_HEIGHT = 44;
+const PEAK_HEIGHT = 44;
+const END_HEIGHT = 0;
 const RIDGE_AMPLITUDE = 8;
 
+const PEAK_T = 0.5;
+const PEAK_X = X_MIN + WIDTH * PEAK_T;
+
 export const MOUNTAIN_LEFT = X_MIN;
-export const MOUNTAIN_SLOPE = (END_HEIGHT - START_HEIGHT) / WIDTH;
+export const MOUNTAIN_RIGHT = X_MAX;
+export const MOUNTAIN_PEAK_X = PEAK_X;
+export const MOUNTAIN_ASCENT_SLOPE =
+  (PEAK_HEIGHT - START_HEIGHT) / (PEAK_X - X_MIN);
+export const MOUNTAIN_DESCENT_SLOPE =
+  (PEAK_HEIGHT - END_HEIGHT) / (X_MAX - PEAK_X);
 
 const COLOR_LOW = new THREE.Color("#ffffff");
 const COLOR_MID = new THREE.Color("#ffffff");
@@ -29,13 +38,24 @@ const WALL_LOW = new THREE.Color("#d9dde3");
 const WALL_MID = new THREE.Color("#f0f2f5");
 const WALL_HIGH = new THREE.Color("#ffffff");
 
+function baseHeightAt(x: number): number {
+  const t = (x - X_MIN) / WIDTH;
+  if (t <= PEAK_T) {
+    return START_HEIGHT + (PEAK_HEIGHT - START_HEIGHT) * (t / PEAK_T);
+  }
+  return END_HEIGHT + (PEAK_HEIGHT - END_HEIGHT) * ((1 - t) / (1 - PEAK_T));
+}
+
+const RIDGE_START = fbm(X_MIN * 0.045 + 7, 3.7, 4);
+const RIDGE_END = fbm(X_MAX * 0.045 + 7, 3.7, 4);
+
 function elevationAt(x: number): number {
   const t = (x - X_MIN) / WIDTH;
-  const base = START_HEIGHT + (END_HEIGHT - START_HEIGHT) * t;
   const ridge =
-    (fbm(x * 0.045 + 7, 3.7, 4) - fbm(X_MIN * 0.045 + 7, 3.7, 4)) *
+    (fbm(x * 0.045 + 7, 3.7, 4) -
+      (RIDGE_START + (RIDGE_END - RIDGE_START) * t)) *
     RIDGE_AMPLITUDE;
-  return base + ridge;
+  return baseHeightAt(x) + ridge;
 }
 
 function wallTop(x: number): number {
@@ -63,7 +83,7 @@ function surfaceColor(
   mid: THREE.Color,
   high: THREE.Color,
 ): THREE.Color {
-  const t = THREE.MathUtils.clamp(h / END_HEIGHT, 0, 1);
+  const t = THREE.MathUtils.clamp(h / PEAK_HEIGHT, 0, 1);
   const color = new THREE.Color();
   color.copy(low).lerp(mid, Math.min(1, t * 1.6));
   color.lerp(high, Math.max(0, t - 0.4) * 1.2);
