@@ -49,7 +49,7 @@ function baseHeightAt(x: number): number {
 const RIDGE_START = fbm(X_MIN * 0.045 + 7, 3.7, 4);
 const RIDGE_END = fbm(X_MAX * 0.045 + 7, 3.7, 4);
 
-function elevationAt(x: number): number {
+export function elevationAt(x: number): number {
   const t = (x - X_MIN) / WIDTH;
   const ridge =
     (fbm(x * 0.045 + 7, 3.7, 4) -
