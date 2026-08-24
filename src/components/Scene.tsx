@@ -4,13 +4,31 @@ import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
 
-const MIN_X = -56;
-const MAX_X = 56;
+const CAMERA_Z = 36;
+const CAMERA_FOV = 44;
+const HALF_FOV_V = THREE.MathUtils.degToRad(CAMERA_FOV / 2);
+const PITCH = 0.15;
+const CAMERA_Y = CAMERA_Z * Math.tan(PITCH + HALF_FOV_V);
+const VIEW_DEPTH =
+  CAMERA_Y * Math.sin(PITCH) + CAMERA_Z * Math.cos(PITCH);
+const WIDTH_MULTIPLIER = 3;
+
+function leftEdgeX(aspect: number): number {
+  const halfFovH = Math.atan(Math.tan(HALF_FOV_V) * aspect);
+  return VIEW_DEPTH * Math.tan(halfFovH);
+}
+
+function mountainBounds(aspect: number): { minX: number; maxX: number } {
+  const lx = leftEdgeX(aspect);
+  const totalLength = 2 * (2 * lx * WIDTH_MULTIPLIER);
+  return { minX: lx, maxX: totalLength - lx };
+}
 
 function CameraRig() {
   const { camera, gl } = useThree();
   const target = useRef(0);
   const current = useRef(0);
+  const positioned = useRef(false);
   const vel = useRef(0);
   const dragging = useRef(false);
 
@@ -24,7 +42,7 @@ function CameraRig() {
     const onDown = (e: PointerEvent) => {
       dragging.current = true;
       startX = e.clientX;
-      startCamX = current.current;
+      startCamX = camera.position.x;
       lastX = e.clientX;
       lastT = performance.now();
       vel.current = 0;
@@ -38,11 +56,14 @@ function CameraRig() {
 
     const onMove = (e: PointerEvent) => {
       if (!dragging.current) return;
+      const { minX, maxX } = mountainBounds(
+        (camera as THREE.PerspectiveCamera).aspect,
+      );
       const dx = e.clientX - startX;
       target.current = THREE.MathUtils.clamp(
         startCamX - dx * 0.14,
-        MIN_X,
-        MAX_X,
+        minX,
+        maxX,
       );
       const now = performance.now();
       const dt = Math.max(1, now - lastT);
@@ -71,15 +92,23 @@ function CameraRig() {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
     };
-  }, [gl]);
+  }, [gl, camera]);
 
   useFrame((_, delta) => {
+    const perspective = camera as THREE.PerspectiveCamera;
+    const { minX, maxX } = mountainBounds(perspective.aspect);
+    if (!positioned.current) {
+      target.current = minX;
+      current.current = minX;
+      positioned.current = true;
+    }
+
     if (!dragging.current) {
       if (Math.abs(vel.current) > 0.05) {
         target.current = THREE.MathUtils.clamp(
           target.current + vel.current,
-          MIN_X,
-          MAX_X,
+          minX,
+          maxX,
         );
         vel.current *= Math.pow(0.92, delta * 60);
       } else {
@@ -88,13 +117,21 @@ function CameraRig() {
     }
 
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
+    current.current = THREE.MathUtils.clamp(current.current, minX, maxX);
 
     camera.position.x = current.current;
-    camera.position.y = 14;
-    camera.rotation.set(-0.245, 0, 0);
+    camera.position.y = CAMERA_Y;
+    camera.rotation.set(-PITCH, 0, 0);
   });
 
   return null;
+}
+
+function AdaptiveMountain() {
+  const { camera } = useThree();
+  const aspect = (camera as THREE.PerspectiveCamera).aspect;
+  const width = 2 * leftEdgeX(aspect) * WIDTH_MULTIPLIER;
+  return <MountainRange width={width} />;
 }
 
 export default function Scene() {
@@ -102,7 +139,7 @@ export default function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ position: [0, 14, 36], fov: 44, near: 0.1, far: 600 }}
+      camera={{ position: [20, CAMERA_Y, CAMERA_Z], fov: CAMERA_FOV, near: 0.1, far: 600 }}
     >
       <color attach="background" args={["#eef0f2"]} />
       <fog attach="fog" args={["#eef0f2", 90, 260]} />
@@ -114,7 +151,7 @@ export default function Scene() {
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-90}
-        shadow-camera-right={90}
+        shadow-camera-right={450}
         shadow-camera-top={60}
         shadow-camera-bottom={-60}
         shadow-camera-far={160}
@@ -122,12 +159,12 @@ export default function Scene() {
       />
       <directionalLight position={[-30, 20, -20]} intensity={0.3} />
 
-      <MountainRange />
+      <AdaptiveMountain />
 
       <ContactShadows
-        position={[0, 0.02, 0]}
+        position={[141, 0.02, 0]}
         opacity={0.38}
-        scale={180}
+        scale={320}
         blur={2.6}
         far={26}
         color="#88919c"
