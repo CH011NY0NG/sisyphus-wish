@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
+import { ridgeBaseHeightAt } from "../lib/mountain";
 
 const CAMERA_Z = 36;
 const CAMERA_FOV = 44;
@@ -31,6 +32,7 @@ function CameraRig() {
   const positioned = useRef(false);
   const vel = useRef(0);
   const dragging = useRef(false);
+  const ridgeRef = useRef(0);
 
   useEffect(() => {
     const el = gl.domElement;
@@ -100,6 +102,8 @@ function CameraRig() {
     if (!positioned.current) {
       target.current = minX;
       current.current = minX;
+      const initWidth = 2 * leftEdgeX(perspective.aspect) * WIDTH_MULTIPLIER;
+      ridgeRef.current = ridgeBaseHeightAt(minX, initWidth);
       positioned.current = true;
     }
 
@@ -119,8 +123,14 @@ function CameraRig() {
     current.current += (target.current - current.current) * Math.min(1, delta * 9);
     current.current = THREE.MathUtils.clamp(current.current, minX, maxX);
 
+    // Track the ridge height so the mountain always fills the same screen area:
+    // keep the first-screen framing, then follow the ridge up/down as it pans.
+    const width = 2 * leftEdgeX(perspective.aspect) * WIDTH_MULTIPLIER;
+    const ridge = ridgeBaseHeightAt(current.current, width);
+    const camY = CAMERA_Y + (ridge - ridgeRef.current);
+
     camera.position.x = current.current;
-    camera.position.y = CAMERA_Y;
+    camera.position.y = camY;
     camera.rotation.set(-PITCH, 0, 0);
   });
 
@@ -144,10 +154,10 @@ export default function Scene() {
       <color attach="background" args={["#eef0f2"]} />
       <fog attach="fog" args={["#eef0f2", 90, 260]} />
 
-      <ambientLight intensity={0.95} />
+      <ambientLight intensity={0.7} />
       <directionalLight
-        position={[24, 36, 26]}
-        intensity={1.3}
+        position={[16, 45, 20]}
+        intensity={1.2}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-90}
@@ -157,7 +167,7 @@ export default function Scene() {
         shadow-camera-far={160}
         shadow-bias={-0.0004}
       />
-      <directionalLight position={[-30, 20, -20]} intensity={0.3} />
+      <directionalLight position={[-16, 45, 20]} intensity={1.2} />
 
       <AdaptiveMountain />
 
