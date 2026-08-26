@@ -49,6 +49,88 @@ button {
   touch-action: none;
 }
 
+.mountain-controls {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e8eb;
+  font-size: 13px;
+  color: #333d4b;
+  overflow-y: auto;
+}
+
+.mountain-controls-reset {
+  align-self: flex-end;
+  padding: 3px 10px;
+  border: 1px solid #e5e8eb;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #333d4b;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mountain-controls-reset:hover {
+  background: #f2f4f6;
+}
+
+.mountain-controls-group {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid #e5e8eb;
+  font-size: 10px;
+  font-weight: 600;
+  color: #8b95a1;
+}
+
+.mountain-controls-group:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.mountain-control {
+  display: grid;
+  grid-template-columns: 100px 1fr 48px;
+  align-items: center;
+  gap: 8px;
+}
+
+.mountain-control-bool {
+  grid-template-columns: 100px 1fr;
+}
+
+.mountain-control-color {
+  grid-template-columns: 100px 44px 1fr;
+}
+
+.mountain-control input[type="color"] {
+  width: 44px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #e5e8eb;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.mountain-control-label {
+  white-space: nowrap;
+}
+
+.mountain-control input[type="range"] {
+  width: 100%;
+  margin: 0;
+}
+
+.mountain-control output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .content-area {
   flex: 1 1 60%;
   min-height: 0;

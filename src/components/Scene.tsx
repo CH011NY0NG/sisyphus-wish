@@ -3,7 +3,10 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
-import { ridgeBaseHeightAt } from "../lib/mountain";
+import {
+  ridgeBaseHeightAt,
+  type MountainParams,
+} from "../lib/mountain";
 
 const CAMERA_Z = 36;
 const CAMERA_FOV = 44;
@@ -25,7 +28,7 @@ function mountainBounds(aspect: number): { minX: number; maxX: number } {
   return { minX: lx, maxX: totalLength - lx };
 }
 
-function CameraRig() {
+function CameraRig({ params }: { params: MountainParams }) {
   const { camera, gl } = useThree();
   const target = useRef(0);
   const current = useRef(0);
@@ -103,7 +106,7 @@ function CameraRig() {
       target.current = minX;
       current.current = minX;
       const initWidth = 2 * leftEdgeX(perspective.aspect) * WIDTH_MULTIPLIER;
-      ridgeRef.current = ridgeBaseHeightAt(minX, initWidth);
+      ridgeRef.current = ridgeBaseHeightAt(minX, initWidth, params);
       positioned.current = true;
     }
 
@@ -126,7 +129,7 @@ function CameraRig() {
     // Track the ridge height so the mountain always fills the same screen area:
     // keep the first-screen framing, then follow the ridge up/down as it pans.
     const width = 2 * leftEdgeX(perspective.aspect) * WIDTH_MULTIPLIER;
-    const ridge = ridgeBaseHeightAt(current.current, width);
+    const ridge = ridgeBaseHeightAt(current.current, width, params);
     const camY = CAMERA_Y + (ridge - ridgeRef.current);
 
     camera.position.x = current.current;
@@ -137,39 +140,48 @@ function CameraRig() {
   return null;
 }
 
-function AdaptiveMountain() {
+function AdaptiveMountain({ params }: { params: MountainParams }) {
   const { camera } = useThree();
   const aspect = (camera as THREE.PerspectiveCamera).aspect;
   const width = 2 * leftEdgeX(aspect) * WIDTH_MULTIPLIER;
-  return <MountainRange width={width} />;
+  return <MountainRange width={width} params={params} />;
 }
 
-export default function Scene() {
+type SceneProps = {
+  params: MountainParams;
+};
+
+export default function Scene({ params }: SceneProps) {
   return (
     <Canvas
       shadows
       dpr={[1, 2]}
       camera={{ position: [20, CAMERA_Y, CAMERA_Z], fov: CAMERA_FOV, near: 0.1, far: 600 }}
     >
-      <color attach="background" args={["#eef0f2"]} />
-      <fog attach="fog" args={["#eef0f2", 90, 260]} />
+      <color attach="background" args={[params.bgColor]} />
+      <fog attach="fog" args={[params.bgColor, 90, 260]} />
 
-      <ambientLight intensity={0.7} />
-      <directionalLight
-        position={[16, 45, 20]}
-        intensity={1.2}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-90}
-        shadow-camera-right={450}
-        shadow-camera-top={60}
-        shadow-camera-bottom={-60}
-        shadow-camera-far={160}
-        shadow-bias={-0.0004}
-      />
-      <directionalLight position={[-16, 45, 20]} intensity={1.2} />
+<ambientLight intensity={0.7} color={params.ambientColor} />
+        <directionalLight
+          position={[16, 45, 20]}
+          intensity={1.2}
+          color={params.lightColor}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-left={-90}
+          shadow-camera-right={450}
+          shadow-camera-top={60}
+          shadow-camera-bottom={-60}
+          shadow-camera-far={160}
+          shadow-bias={-0.0004}
+        />
+        <directionalLight
+          position={[-16, 45, 20]}
+          intensity={1.2}
+          color={params.fillLightColor}
+        />
 
-      <AdaptiveMountain />
+      <AdaptiveMountain params={params} />
 
       <ContactShadows
         position={[141, 0.02, 0]}
@@ -177,10 +189,10 @@ export default function Scene() {
         scale={320}
         blur={2.6}
         far={26}
-        color="#88919c"
+        color={params.shadowColor}
       />
 
-      <CameraRig />
+      <CameraRig params={params} />
     </Canvas>
   );
 }
