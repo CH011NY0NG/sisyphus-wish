@@ -1,62 +1,59 @@
 import * as THREE from "three";
 import { fbm } from "./noise";
 
+// Fixed slope of the mountain's ridge profile (no longer tunable).
+const RISE_SLOPE = 0.5;
+
 export type MountainParams = {
   depth: number;
   xSeg: number;
   zSeg: number;
-  riseSlope: number;
   rockAmplitude: number;
-  rockShade: number;
   detailFreq: number;
   rockFreq: number;
   falloffPower: number;
   baseColor: string;
-  shadeLight: string;
-  shadeDark: string;
   rimColor: string;
   rimStrength: number;
   rimPower: number;
-  lightColor: string;
-  fillLightColor: string;
-  ambientColor: string;
-  bgColor: string;
-  shadowColor: string;
+  rockEnabled: boolean;
+  rockRadius: number;
+  rockDetail: number;
+  rockRough: number;
+  rockColor: string;
+  rockGlow: number;
 };
 
 export const DEFAULT_MOUNTAIN_PARAMS: MountainParams = {
-  depth: 56,
-  xSeg: 96,
+  depth: 48,
+  xSeg: 112,
   zSeg: 12,
-  riseSlope: 0.3217,
-  rockAmplitude: 8,
-  rockShade: 0.85,
-  detailFreq: 3,
-  rockFreq: 1,
+  rockAmplitude: 7.5,
+  detailFreq: 1.25,
+  rockFreq: 0.4,
   falloffPower: 0.5,
-  baseColor: "#ffffff",
-  shadeLight: "#ffffff",
-  shadeDark: "#ffffff",
-  rimColor: "#b39ddb",
-  rimStrength: 1.2,
-  rimPower: 2.5,
-  lightColor: "#ffffff",
-  fillLightColor: "#ffffff",
-  ambientColor: "#ffffff",
-  bgColor: "#f2f4f6",
-  shadowColor: "#d5d9de",
+  baseColor: "#fdfaff",
+  rimColor: "#955cff",
+  rimStrength: 0.4,
+  rimPower: 0.5,
+  rockEnabled: true,
+  rockRadius: 4,
+  rockDetail: 3,
+  rockRough: 0.5,
+  rockColor: "#a98ce8",
+  rockGlow: 0,
 };
 
-function baseAt(x: number, width: number, p: MountainParams): number {
-  if (x <= width) return p.riseSlope * x;
-  return p.riseSlope * (2 * width - x);
+function baseAt(x: number, width: number): number {
+  if (x <= width) return RISE_SLOPE * x;
+  return RISE_SLOPE * (2 * width - x);
 }
 
 // Sign of the base slope (+1 rising, -1 falling) at x, computed from baseAt so
 // it stays correct even if the ridge profile changes shape.
-function baseSlopeSignAt(x: number, width: number, p: MountainParams): number {
+function baseSlopeSignAt(x: number, width: number): number {
   const eps = width * 1e-3;
-  return baseAt(x + eps, width, p) - baseAt(x - eps, width, p) >= 0 ? 1 : -1;
+  return baseAt(x + eps, width) - baseAt(x - eps, width) >= 0 ? 1 : -1;
 }
 
 function rockProfileAt(x: number, z: number, p: MountainParams) {
@@ -98,7 +95,7 @@ function heightAt(
   // and the far ridge (z === 0) so the skyline silhouette stays intact.
   const { rock } = rockProfileAt(x, z, p);
 
-  return falloff * (baseAt(x, width, p) + detail + fine) + rock * rockMaskAt(z, p);
+  return falloff * (baseAt(x, width) + detail + fine) + rock * rockMaskAt(z, p);
 }
 
 // Height of the skyline ridge directly in front of the camera at x.
@@ -121,12 +118,40 @@ export function mountainHeightAt(
 }
 
 // Smooth, noise-free ridge base used for camera tracking (no jitter).
-export function ridgeBaseHeightAt(
-  x: number,
-  width: number,
-  p: MountainParams = DEFAULT_MOUNTAIN_PARAMS,
-): number {
-  return baseAt(x, width, p);
+export function ridgeBaseHeightAt(x: number, width: number): number {
+  return baseAt(x, width);
+}
+
+// Low-poly sphere/rock: an icosahedron whose vertices are displaced along
+// their own direction by a smooth, spatially-correlated noise so the surface
+// stays connected while the silhouette gets slightly irregular. More facets
+// (higher detail) make the silhouette read rounder.
+export function buildRockGeometry(
+  detail: number,
+  rough: number,
+): THREE.BufferGeometry {
+  const geo = new THREE.IcosahedronGeometry(1, detail);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const len = Math.sqrt(x * x + y * y + z * z) || 1;
+    const nx = x / len;
+    const ny = y / len;
+    const nz = z / len;
+    // Average three 2-coordinate noise samples so the bumps distribute evenly
+    // across all directions instead of clumping on one side of the sphere.
+    const n1 = fbm(nx * 1.5, ny * 1.5, 3);
+    const n2 = fbm(ny * 1.5 + 9, nz * 1.5 + 15, 3);
+    const n3 = fbm(nz * 1.5 + 23, nx * 1.5 + 31, 3);
+    const n = (n1 + n2 + n3) / 3 - 0.5;
+    const r = 1 + n * 2 * rough;
+    pos.setXYZ(i, nx * r, ny * r, nz * r);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
 }
 
 export function buildMountainGeometry(
@@ -170,7 +195,7 @@ export function buildMountainGeometry(
       const c = ix + 1 + gridX * (iy + 1);
       const d = ix + 1 + gridX * iy;
       const centerX = (pos.getX(a) + pos.getX(d)) / 2;
-      if (baseSlopeSignAt(centerX, width, p) > 0) {
+      if (baseSlopeSignAt(centerX, width) > 0) {
         indices.push(a, b, d, b, c, d);
       } else {
         indices.push(a, b, c, a, c, d);

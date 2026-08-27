@@ -49,6 +49,33 @@ button {
   touch-action: none;
 }
 
+.scene-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.peak-confirm {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 12px 28px;
+  border: none;
+  border-radius: 999px;
+  background: #b39ddb;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.peak-confirm:hover {
+  background: #a695c9;
+}
+
 .mountain-controls {
   flex: 1 1 auto;
   min-height: 0;
