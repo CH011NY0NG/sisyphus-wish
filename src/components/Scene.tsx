@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows, GradientTexture } from "@react-three/drei";
+import { ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
+import AuroraBackdrop from "./AuroraBackdrop";
 import {
   ridgeBaseHeightAt,
   type MountainParams,
@@ -22,32 +23,6 @@ const WIDTH_MULTIPLIER = 3;
 function leftEdgeX(aspect: number): number {
   const halfFovH = Math.atan(Math.tan(HALF_FOV_V) * aspect);
   return VIEW_DEPTH * Math.tan(halfFovH);
-}
-
-// Soft atmospheric gradient background (warm sand/parchment tones) that follows
-// the camera horizontally so it stays framed while panning.
-function GradientBackdrop() {
-  const { camera } = useThree();
-  const ref = useRef<THREE.Mesh>(null);
-
-  useFrame(() => {
-    const mesh = ref.current;
-    if (!mesh) return;
-    mesh.position.x = (camera as THREE.PerspectiveCamera).position.x;
-  });
-
-  return (
-    <mesh ref={ref} position={[0, 0, -50]}>
-      <planeGeometry args={[140, 140]} />
-      <meshBasicMaterial toneMapped={false} depthWrite={false}>
-        <GradientTexture
-          stops={[0, 0.5, 1]}
-          colors={["#ecdcc2", "#f6e9d6", "#fdf6ec"]}
-          size={512}
-        />
-      </meshBasicMaterial>
-    </mesh>
-  );
 }
 
 // Drifting sand motes that stay in front of the camera (the parent group
@@ -358,7 +333,7 @@ export default function Scene({
         <color attach="background" args={["#ecdcc2"]} />
         <fog attach="fog" args={["#ecdcc2", 120, 300]} />
 
-        <GradientBackdrop />
+        <AuroraBackdrop panRef={rockPanRef} />
         <Atmosphere rockWorldXRef={rockWorldXRef} params={params} />
 
         <ambientLight intensity={0.25} />
