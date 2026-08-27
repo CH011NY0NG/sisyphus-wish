@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { ContactShadows } from "@react-three/drei";
+import { ContactShadows, GradientTexture } from "@react-three/drei";
 import * as THREE from "three";
 import MountainRange from "./MountainRange";
 import {
   ridgeBaseHeightAt,
   type MountainParams,
+  DEFAULT_MOUNTAIN_PARAMS,
 } from "../lib/mountain";
 
 const CAMERA_Z = 36;
@@ -21,6 +22,150 @@ const WIDTH_MULTIPLIER = 3;
 function leftEdgeX(aspect: number): number {
   const halfFovH = Math.atan(Math.tan(HALF_FOV_V) * aspect);
   return VIEW_DEPTH * Math.tan(halfFovH);
+}
+
+// Soft atmospheric gradient background (warm sand/parchment tones) that follows
+// the camera horizontally so it stays framed while panning.
+function GradientBackdrop() {
+  const { camera } = useThree();
+  const ref = useRef<THREE.Mesh>(null);
+
+  useFrame(() => {
+    const mesh = ref.current;
+    if (!mesh) return;
+    mesh.position.x = (camera as THREE.PerspectiveCamera).position.x;
+  });
+
+  return (
+    <mesh ref={ref} position={[0, 0, -50]}>
+      <planeGeometry args={[140, 140]} />
+      <meshBasicMaterial toneMapped={false} depthWrite={false}>
+        <GradientTexture
+          stops={[0, 0.5, 1]}
+          colors={["#ecdcc2", "#f6e9d6", "#fdf6ec"]}
+          size={512}
+        />
+      </meshBasicMaterial>
+    </mesh>
+  );
+}
+
+// Drifting sand motes that stay in front of the camera (the parent group
+// follows the camera x/y). Normal blending with a mid-sand color so the
+// particles stay visible against the light background.
+function SandParticles() {
+  const COUNT = 260;
+  const elapsed = useRef(0);
+
+  const { positions, velocities, geometry, material } = useMemo(() => {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(COUNT * 3);
+    const vel = new Float32Array(COUNT);
+    for (let i = 0; i < COUNT; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 180;
+      // Fixed world height spread across the whole mountain so the camera
+      // passes the motes by while climbing, yet they stay present everywhere.
+      pos[i * 3 + 1] = Math.random() * 90;
+      pos[i * 3 + 2] = 18 + Math.random() * 16;
+      vel[i] = 1 + Math.random() * 3;
+    }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+    const c = document.createElement("canvas");
+    c.width = c.height = 32;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 32, 32);
+    }
+    const mat = new THREE.PointsMaterial({
+      map: new THREE.CanvasTexture(c),
+      color: new THREE.Color("#c0a277"),
+      size: 0.9,
+      transparent: true,
+      opacity: 0.5,
+      sizeAttenuation: true,
+      depthWrite: false,
+    });
+    return { positions: pos, velocities: vel, geometry: geo, material: mat };
+  }, []);
+
+  useFrame((_, delta) => {
+    elapsed.current += delta;
+    const t = elapsed.current;
+    for (let i = 0; i < COUNT; i++) {
+      // Slow fall plus a gentle horizontal sway so the motes scatter in the air.
+      positions[i * 3 + 1] -= velocities[i] * delta;
+      positions[i * 3] += Math.sin(t * 0.5 + i) * delta * 2;
+      if (positions[i * 3 + 1] < 0) positions[i * 3 + 1] += 90;
+    }
+    geometry.attributes.position.needsUpdate = true;
+  });
+
+  return <points geometry={geometry} material={material} />;
+}
+
+// Light, cheap atmosphere: drifting sand motes (fixed heights, passed by while
+// climbing) + a soft dawn sun that rises with the rock's progress up the
+// mountain (0% at the start, 100% at the peak).
+function Atmosphere({
+  rockWorldXRef,
+  params,
+}: {
+  rockWorldXRef: RefObject<number>;
+  params: MountainParams;
+}) {
+  const { camera } = useThree();
+  const groupRef = useRef<THREE.Group>(null);
+  const sunRef = useRef<THREE.Sprite>(null);
+
+  const glowTexture = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 256;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      g.addColorStop(0, "rgba(255, 238, 205, 0.14)");
+      g.addColorStop(0.5, "rgba(255, 228, 185, 0.11)");
+      g.addColorStop(1, "rgba(255, 228, 185, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 256, 256);
+    }
+    return new THREE.CanvasTexture(c);
+  }, []);
+
+  useFrame(() => {
+    const cam = camera as THREE.PerspectiveCamera;
+    if (groupRef.current) groupRef.current.position.x = cam.position.x;
+    if (sunRef.current) {
+      // Rock's progress up the mountain: 0% at the start (x=0), 100% at the
+      // peak (x=width). This is stable even where the camera stops moving.
+      const lx = leftEdgeX(cam.aspect);
+      const width = 2 * lx * WIDTH_MULTIPLIER;
+      const S = params.rockRadius * 3;
+      const rockXM = (rockWorldXRef.current ?? 0) - S;
+      const progress = THREE.MathUtils.clamp(rockXM / width, 0, 1);
+      const y = THREE.MathUtils.lerp(-70, 3 * lx, progress);
+      sunRef.current.position.set(0, y, -46);
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <SandParticles />
+      <sprite ref={sunRef} scale={[100, 100, 1]}>
+        <spriteMaterial
+          map={glowTexture}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </sprite>
+    </group>
+  );
 }
 
 // The rock is decoupled from the camera: it rolls with the drag velocity and
@@ -96,7 +241,7 @@ function CameraRig({
     const perspective = camera as THREE.PerspectiveCamera;
     const lx = leftEdgeX(perspective.aspect);
     const width = 2 * lx * WIDTH_MULTIPLIER;
-    const S = params.rockRadius * 4;
+    const S = params.rockRadius * 3;
     // The camera follows the rock continuously — down the mountain, past its end,
 // and across the flat space behind it (no intermediate stop at the corner).
     const minX = lx;
@@ -189,10 +334,12 @@ function AdaptiveMountain({
 }
 
 type SceneProps = {
-  params: MountainParams;
+  params?: MountainParams;
 };
 
-export default function Scene({ params }: SceneProps) {
+export default function Scene({
+  params = DEFAULT_MOUNTAIN_PARAMS,
+}: SceneProps) {
   const rockWorldXRef = useRef(0);
   const rockPanRef = useRef(0);
   const rollDownRef = useRef({ active: false, targetXM: 0 });
@@ -208,8 +355,15 @@ export default function Scene({ params }: SceneProps) {
         dpr={[1, 2]}
         camera={{ position: [20, CAMERA_Y, CAMERA_Z], fov: CAMERA_FOV, near: 0.1, far: 600 }}
       >
-        <color attach="background" args={["#ffffff"]} />
-        <fog attach="fog" args={["#ffffff", 90, 260]} />
+        <color attach="background" args={["#ecdcc2"]} />
+        <fog attach="fog" args={["#ecdcc2", 120, 300]} />
+
+        <GradientBackdrop />
+        <Atmosphere rockWorldXRef={rockWorldXRef} params={params} />
+
+        <ambientLight intensity={0.25} />
+        <directionalLight position={[16, 45, -30]} intensity={0.5} />
+        <directionalLight position={[-16, 45, 20]} intensity={0.5} />
 
         <AdaptiveMountain
           params={params}
@@ -223,7 +377,7 @@ export default function Scene({ params }: SceneProps) {
         />
 
         <ContactShadows
-          position={[141 + params.rockRadius * 4, 0.02, 0]}
+          position={[141 + params.rockRadius * 3, 0.02, 0]}
           opacity={0.38}
           scale={320}
           blur={2.6}

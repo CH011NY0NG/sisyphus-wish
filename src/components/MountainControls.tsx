@@ -29,12 +29,9 @@ const SLIDERS: SliderDef[] = [
   { key: "detailFreq", label: "지형 밀도", min: 0.25, max: 3, step: 0.05 },
   { key: "rockFreq", label: "바위 밀도", min: 0.25, max: 3, step: 0.05 },
   { key: "falloffPower", label: "깊이 감쇠 곡선", min: 0.5, max: 3, step: 0.05 },
-  { key: "rimStrength", label: "림 강도", min: 0, max: 3, step: 0.05 },
-  { key: "rimPower", label: "림 굴곡", min: 0.5, max: 6, step: 0.1 },
   { key: "rockRadius", label: "돌 크기", min: 0, max: 8, step: 0.1 },
   { key: "rockDetail", label: "돌 패싯", min: 0, max: 4, step: 1 },
   { key: "rockRough", label: "돌 요철", min: 0, max: 1, step: 0.05 },
-  { key: "rockGlow", label: "돌 표면 발광", min: 0, max: 300, step: 5 },
 ];
 
 const BOOLS: BoolDef[] = [
@@ -43,7 +40,6 @@ const BOOLS: BoolDef[] = [
 
 const COLORS: ColorDef[] = [
   { key: "baseColor", label: "산색" },
-  { key: "rimColor", label: "림 색" },
   { key: "rockColor", label: "돌 색" },
 ];
 

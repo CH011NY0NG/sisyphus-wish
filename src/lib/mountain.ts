@@ -13,35 +13,27 @@ export type MountainParams = {
   rockFreq: number;
   falloffPower: number;
   baseColor: string;
-  rimColor: string;
-  rimStrength: number;
-  rimPower: number;
   rockEnabled: boolean;
   rockRadius: number;
   rockDetail: number;
   rockRough: number;
   rockColor: string;
-  rockGlow: number;
 };
 
 export const DEFAULT_MOUNTAIN_PARAMS: MountainParams = {
-  depth: 48,
+  depth: 32,
   xSeg: 112,
   zSeg: 12,
-  rockAmplitude: 7.5,
+  rockAmplitude: 8,
   detailFreq: 1.25,
-  rockFreq: 0.4,
+  rockFreq: 0.55,
   falloffPower: 0.5,
-  baseColor: "#fdfaff",
-  rimColor: "#955cff",
-  rimStrength: 0.4,
-  rimPower: 0.5,
+  baseColor: "#bfa47d",
   rockEnabled: true,
   rockRadius: 4,
   rockDetail: 3,
   rockRough: 0.5,
-  rockColor: "#a98ce8",
-  rockGlow: 0,
+  rockColor: "#d7cea8",
 };
 
 function baseAt(x: number, width: number): number {

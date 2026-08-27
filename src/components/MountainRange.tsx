@@ -1,83 +1,44 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { RefObject } from "react";
 import * as THREE from "three";
 import {
   buildMountainGeometry,
   buildRockGeometry,
+  mountainHeightAt,
   ridgeHeightAt,
   type MountainParams,
 } from "../lib/mountain";
 
-const VERTEX_SHADER = /* glsl */ `
-  varying vec3 vColor;
-  varying vec3 vViewPosition;
-
-  void main() {
-    vColor = color;
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vViewPosition = -mvPosition.xyz;
-    gl_Position = projectionMatrix * mvPosition;
+// Vertical cap wall that closes a mountain end (x = 0 start or x = 2w end) so
+// the bumpy rock there doesn't read as a flat board when viewed from the side.
+function buildCapWall(xPos: number, width: number, params: MountainParams) {
+  const gz = params.zSeg + 1;
+  const positions: number[] = [];
+  for (let i = 0; i < gz; i++) {
+    const z = (i / params.zSeg) * (params.depth / 2);
+    const h = Math.max(0, mountainHeightAt(xPos, z, width, params));
+    positions.push(xPos, 0, z);
+    positions.push(xPos, h, z);
   }
-`;
-
-const FRAGMENT_SHADER = /* glsl */ `
-  uniform vec3 uRimColor;
-  uniform float uRimStrength;
-  uniform float uRimPower;
-
-  varying vec3 vColor;
-  varying vec3 vViewPosition;
-
-  void main() {
-    // Flat facet normal derived from screen-space derivatives.
-    vec3 fdx = dFdx(vViewPosition);
-    vec3 fdy = dFdy(vViewPosition);
-    vec3 normal = normalize(cross(fdx, fdy));
-
-    vec3 viewDir = normalize(vViewPosition);
-    float rim = pow(1.0 - max(dot(viewDir, normal), 0.0), uRimPower);
-    vec3 outColor = mix(
-      vColor,
-      uRimColor,
-      clamp(rim * uRimStrength, 0.0, 1.0)
-    );
-    gl_FragColor = vec4(outColor, 1.0);
+  const indices: number[] = [];
+  for (let i = 0; i < params.zSeg; i++) {
+    const a = i * 2;
+    const b = i * 2 + 1;
+    const c = (i + 1) * 2 + 1;
+    const d = (i + 1) * 2;
+    indices.push(a, b, d, b, c, d);
   }
-`;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
 
-// Glowing low-poly orb shader: per-facet fresnel (flat normals from screen
-// derivatives) from a bright luminous core to a white-hot rim.
-const ORB_VERTEX_SHADER = /* glsl */ `
-  varying vec3 vViewPosition;
-
-  void main() {
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vViewPosition = -mvPosition.xyz;
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-const ORB_FRAGMENT_SHADER = /* glsl */ `
-  uniform vec3 uCore;
-  uniform vec3 uGlow;
-
-  varying vec3 vViewPosition;
-
-  void main() {
-    vec3 fdx = dFdx(vViewPosition);
-    vec3 fdy = dFdy(vViewPosition);
-    vec3 normal = normalize(cross(fdx, fdy));
-
-    float fres = pow(1.0 - max(dot(normalize(vViewPosition), normal), 0.0), 1.8);
-    vec3 col = mix(uCore, uGlow, fres);
-    gl_FragColor = vec4(col, 1.0);
-  }
-`;
-
-// A glowing low-poly orb that rolls with the drag and publishes its world x so
-// the camera can follow (clamped). Reaching the peak signals the confirm
-// button; pressing it makes the rock auto-roll down the descending slope.
+// A low-poly rock that rolls with the drag and publishes its world x so the
+// camera can follow (clamped). Reaching the peak signals the confirm button;
+// pressing it makes the rock auto-roll down the descending slope.
 function RidgeRock({
   width,
   params,
@@ -100,45 +61,16 @@ function RidgeRock({
   behindMountainRef: RefObject<boolean>;
 }) {
   const ref = useRef<THREE.Mesh>(null);
-  const rockXMRef = useRef(-params.rockRadius * 2);
+  const rockXMRef = useRef(-params.rockRadius * 3);
   const prevXRef = useRef(0);
   const atPeakRef = useRef(false);
-  const S = params.rockRadius * 4;
+  const S = params.rockRadius * 3;
   const ROLL_DOWN_SPEED = 90;
 
   const rockGeometry = useMemo(
     () => buildRockGeometry(params.rockDetail, params.rockRough),
     [params.rockDetail, params.rockRough],
   );
-
-  const orbUniforms = useRef({
-    uCore: {
-      value: new THREE.Color(params.rockColor).lerp(
-        new THREE.Color("#ffffff"),
-        0.18,
-      ),
-    },
-    uGlow: {
-      value: new THREE.Color(params.rockColor).lerp(
-        new THREE.Color("#ffffff"),
-        0.8,
-      ),
-    },
-  }).current;
-
-  useEffect(() => {
-    // Bright luminous core with white-hot rim.
-    const t = THREE.MathUtils.clamp(params.rockGlow / 200, 0, 1);
-    const c = new THREE.Color(params.rockColor);
-    (orbUniforms.uCore.value as THREE.Color).copy(c).lerp(
-      new THREE.Color("#ffffff"),
-      0.1 + 0.2 * t,
-    );
-    (orbUniforms.uGlow.value as THREE.Color).copy(c).lerp(
-      new THREE.Color("#ffffff"),
-      0.8,
-    );
-  }, [params, orbUniforms]);
 
   useFrame((_, delta) => {
     const mesh = ref.current;
@@ -209,10 +141,11 @@ function RidgeRock({
         scale={params.rockRadius}
         visible={params.rockEnabled}
       >
-        <shaderMaterial
-          uniforms={orbUniforms}
-          vertexShader={ORB_VERTEX_SHADER}
-          fragmentShader={ORB_FRAGMENT_SHADER}
+        <meshStandardMaterial
+          color={params.rockColor}
+          flatShading
+          roughness={0.9}
+          metalness={0}
         />
       </mesh>
     </group>
@@ -246,36 +179,50 @@ export default function MountainRange({
     () => buildMountainGeometry(width, params),
     [width, params],
   );
-  const matRef = useRef<THREE.ShaderMaterial>(null);
 
-  const uniforms = useRef({
-    uRimColor: { value: new THREE.Color(params.rimColor) },
-    uRimStrength: { value: params.rimStrength },
-    uRimPower: { value: params.rimPower },
-  }).current;
-
-  useEffect(() => {
-    const m = matRef.current;
-    if (!m) return;
-    (m.uniforms.uRimColor.value as THREE.Color).set(params.rimColor);
-    m.uniforms.uRimStrength.value = params.rimStrength;
-    m.uniforms.uRimPower.value = params.rimPower;
-  }, [params]);
+  // Cap walls closing the mountain's start (x = 0) and far end (x = 2w) so the
+  // bumpy rock doesn't read as a flat board when viewed from the side.
+  const startWallGeometry = useMemo(
+    () => buildCapWall(0, width, params),
+    [width, params],
+  );
+  const endWallGeometry = useMemo(
+    () => buildCapWall(2 * width, width, params),
+    [width, params],
+  );
 
   // The mountain starts at x = 0 + 2×rockDiameter so x = 0 is the near edge of the
   // empty floor in front of it.
-  const S = params.rockRadius * 4;
+  const S = params.rockRadius * 3;
 
   return (
     <>
       <group position={[S, 0, 0]}>
         <mesh geometry={geometry}>
-          <shaderMaterial
-            ref={matRef}
+          <meshStandardMaterial
             vertexColors
-            uniforms={uniforms}
-            vertexShader={VERTEX_SHADER}
-            fragmentShader={FRAGMENT_SHADER}
+            flatShading
+            roughness={0.9}
+            metalness={0}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        <mesh geometry={startWallGeometry}>
+          <meshStandardMaterial
+            color={params.baseColor}
+            flatShading
+            roughness={0.9}
+            metalness={0}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        <mesh geometry={endWallGeometry}>
+          <meshStandardMaterial
+            color={params.baseColor}
+            flatShading
+            roughness={0.9}
+            metalness={0}
+            side={THREE.DoubleSide}
           />
         </mesh>
         <RidgeRock
