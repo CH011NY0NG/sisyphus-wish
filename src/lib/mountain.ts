@@ -21,7 +21,7 @@ export type MountainParams = {
 };
 
 export const DEFAULT_MOUNTAIN_PARAMS: MountainParams = {
-  depth: 32,
+  depth: 48,
   xSeg: 112,
   zSeg: 12,
   rockAmplitude: 8,
@@ -65,29 +65,41 @@ function smoothstep(a: number, b: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-// Mask that fades rock detail to zero along the far ridge (z === 0) so the
+// Mask that fades rock detail to zero along the crest line (z === 0) so the
 // skyline silhouette stays intact, while the rest of the face keeps full rock.
-function rockMaskAt(z: number, p: MountainParams): number {
-  const u = z / (p.depth / 2);
+// zMax is the local depth at this x (it varies with the altitude).
+function rockMaskAt(z: number, zMax: number): number {
+  const u = Math.abs(z) / Math.max(zMax, 1e-6);
   return smoothstep(0, 0.04, u);
 }
 
+// zMax is the local half-depth at this x: the mountain's footprint is wider
+// where it is high and tapers to a point where it meets the ground.
 function heightAt(
   x: number,
   z: number,
+  zMax: number,
   width: number,
   p: MountainParams,
 ): number {
-  const falloff = Math.pow(Math.max(0, 1 - z / (p.depth / 2)), p.falloffPower);
+  const zz = Math.max(zMax, 1e-6);
+  // Symmetric around the crest (z=0): the mountain has a front AND a back face
+  // that both descend to the ground at ±zMax.
+  const falloff = Math.pow(Math.max(0, 1 - Math.abs(z) / zz), p.falloffPower);
+  // Fade the terrain noise toward the tapered tips so the mountain ends in a
+  // clean point instead of a jagged fold.
+  const fade = smoothstep(0, 0.15, zMax / (p.depth / 2));
   const d = p.detailFreq;
-  const detail = fbm(x * 0.2 * d, z * 0.2 * d, 4) * 1;
-  const fine = fbm(x * 0.55 * d + 12, z * 0.55 * d + 4, 3) * 1;
+  const detail = fbm(x * 0.2 * d, z * 0.2 * d, 4) * fade;
+  const fine = fbm(x * 0.55 * d + 12, z * 0.55 * d + 4, 3) * fade;
 
   // Rocky side displacement. Masked to zero along the crest line (x === width)
   // and the far ridge (z === 0) so the skyline silhouette stays intact.
   const { rock } = rockProfileAt(x, z, p);
 
-  return falloff * (baseAt(x, width) + detail + fine) + rock * rockMaskAt(z, p);
+  return (
+    falloff * (baseAt(x, width) + detail + fine) + rock * rockMaskAt(z, zz) * fade
+  );
 }
 
 // Height of the skyline ridge directly in front of the camera at x.
@@ -96,7 +108,7 @@ export function ridgeHeightAt(
   width: number,
   p: MountainParams = DEFAULT_MOUNTAIN_PARAMS,
 ): number {
-  return heightAt(x, 0, width, p);
+  return heightAt(x, 0, p.depth / 2, width, p);
 }
 
 // General terrain height at any point on the face (used for shadow placement).
@@ -106,7 +118,7 @@ export function mountainHeightAt(
   width: number,
   p: MountainParams = DEFAULT_MOUNTAIN_PARAMS,
 ): number {
-  return heightAt(x, z, width, p);
+  return heightAt(x, z, p.depth / 2, width, p);
 }
 
 // Smooth, noise-free ridge base used for camera tracking (no jitter).
@@ -152,33 +164,46 @@ export function buildMountainGeometry(
 ): THREE.BufferGeometry {
   const length = width * 2;
   const half = p.depth / 2;
-  const geo = new THREE.PlaneGeometry(length, half, p.xSeg, p.zSeg);
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(width, 0, half / 2);
+  const peak = RISE_SLOPE * width;
+  const gridX = p.xSeg + 1;
+  const gridZ = p.zSeg + 1;
 
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const count = pos.count;
-  const colors = new Float32Array(count * 3);
+  // Build the grid by hand so each x-column's depth (z extent) follows the
+  // mountain's altitude: widest at the peak, tapering toward a point where the
+  // mountain meets the ground at the ends.
+  const positions = new Float32Array(gridX * gridZ * 3);
+  const colors = new Float32Array(gridX * gridZ * 3);
   const color = new THREE.Color();
   const baseColor = new THREE.Color(p.baseColor);
 
-  for (let i = 0; i < count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    const h = heightAt(x, z, width, p);
-    pos.setY(i, h);
+  let i = 0;
+  for (let iy = 0; iy < gridZ; iy++) {
+    // zFrac spans -1..1 so the width extends symmetrically on both sides of
+    // the crest (front face as wide as the back face).
+    const zFrac = -1 + 2 * (iy / p.zSeg);
+    for (let ix = 0; ix < gridX; ix++) {
+      const x = (ix / p.xSeg) * length;
+      // Linear taper (constant rate), reaching a near-point at the ends.
+      const t = THREE.MathUtils.clamp(baseAt(x, width) / peak, 0, 1);
+      const f = Math.max(0.001, t);
+      const zMax = half * f;
+      const z = zFrac * zMax;
+      const h = heightAt(x, z, zMax, width, p);
 
-    color.copy(baseColor);
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = h;
+      positions[i * 3 + 2] = z;
 
-    colors[i * 3] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
+      color.copy(baseColor);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+      i++;
+    }
   }
 
-  // PlaneGeometry splits every quad along the same diagonal, which makes the
-  // facet grain point the same way on both slopes. Orient each quad's diagonal
-  // along its own base slope so facets slant with the terrain direction.
-  const gridX = p.xSeg + 1;
+  // Orient each quad's diagonal along its own base slope so facets slant with
+  // the terrain direction.
   const indices: number[] = [];
   for (let iy = 0; iy < p.zSeg; iy++) {
     for (let ix = 0; ix < p.xSeg; ix++) {
@@ -186,7 +211,7 @@ export function buildMountainGeometry(
       const b = ix + gridX * (iy + 1);
       const c = ix + 1 + gridX * (iy + 1);
       const d = ix + 1 + gridX * iy;
-      const centerX = (pos.getX(a) + pos.getX(d)) / 2;
+      const centerX = (positions[a * 3] + positions[d * 3]) / 2;
       if (baseSlopeSignAt(centerX, width) > 0) {
         indices.push(a, b, d, b, c, d);
       } else {
@@ -194,10 +219,58 @@ export function buildMountainGeometry(
       }
     }
   }
-  geo.setIndex(indices);
 
-  pos.needsUpdate = true;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(indices);
   geo.computeVertexNormals();
   geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  return geo;
+}
+
+// Flat ground (y=0) whose footprint exactly matches the mountain's tapered
+// base, so the mountain color only appears directly below/under the mountain
+// instead of spreading out as a wide floor.
+export function buildGroundGeometry(
+  width: number,
+  p: MountainParams = DEFAULT_MOUNTAIN_PARAMS,
+): THREE.BufferGeometry {
+  const length = width * 2;
+  const half = p.depth / 2;
+  const peak = RISE_SLOPE * width;
+  const gridX = p.xSeg + 1;
+  const gridZ = 12;
+
+  const positions = new Float32Array(gridX * gridZ * 3);
+  let i = 0;
+  for (let iy = 0; iy < gridZ; iy++) {
+    const zFrac = -1 + 2 * (iy / (gridZ - 1));
+    for (let ix = 0; ix < gridX; ix++) {
+      const x = (ix / p.xSeg) * length;
+      const t = THREE.MathUtils.clamp(baseAt(x, width) / peak, 0, 1);
+      const f = Math.max(0.001, t);
+      const zMax = half * f;
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = 0;
+      positions[i * 3 + 2] = zFrac * zMax;
+      i++;
+    }
+  }
+
+  const indices: number[] = [];
+  for (let iy = 0; iy < gridZ - 1; iy++) {
+    for (let ix = 0; ix < p.xSeg; ix++) {
+      const a = ix + gridX * iy;
+      const b = ix + gridX * (iy + 1);
+      const c = ix + 1 + gridX * (iy + 1);
+      const d = ix + 1 + gridX * iy;
+      indices.push(a, b, d, b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
   return geo;
 }
