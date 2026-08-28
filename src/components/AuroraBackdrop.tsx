@@ -1,22 +1,17 @@
 import { useMemo, useRef } from "react";
 import type { RefObject } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
-// The camera always looks downward at -PITCH; keep in sync with Scene.tsx.
-const BACK_PITCH = 0.15;
-const DISTANCE = 90;
-const BACK_FORWARD = new THREE.Vector3(
-  0,
-  -Math.sin(BACK_PITCH),
-  -Math.cos(BACK_PITCH),
-);
-
+// Screen-space fullscreen quad: the vertex shader writes NDC directly, so it
+// fills the whole canvas regardless of the scene camera's (custom) projection.
+// The mountain/rock render into the top 4:3 band via the scene camera, while
+// this aurora covers everything behind them.
 const VERTEX_SHADER = /* glsl */ `
   varying vec2 vUv;
   void main() {
     vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    gl_Position = vec4(position.xy, 0.999, 1.0);
   }
 `;
 
@@ -29,6 +24,7 @@ const FRAGMENT_SHADER = /* glsl */ `
   uniform vec3 uAuroraA;
   uniform vec3 uAuroraB;
   uniform vec3 uAuroraC;
+  uniform vec3 uMountain;
   varying vec2 vUv;
 
   float hash(vec2 p) {
@@ -116,6 +112,10 @@ const FRAGMENT_SHADER = /* glsl */ `
 
     vec3 col = mix(sky, auroraCol, mask * inten * 0.55);
 
+    // The lower part of the screen is the mountain color — a solid ground for
+    // the app layout below the mountain, fading into the aurora near the base.
+    col = mix(col, uMountain, 1.0 - smoothstep(0.3, 0.62, uv.y));
+
     // Warm glow gathering above the mountain silhouette.
     col += uBottom * exp(-hgt * 4.5) * 0.22;
 
@@ -140,18 +140,17 @@ const FRAGMENT_SHADER = /* glsl */ `
   }
 `;
 
-// Fullscreen aurora backdrop. The plane rides along with the camera (position
-// + orientation), so it always fills the frame no matter how high the camera
-// climbs. A custom shader blends tone-on-tone pastel tones into slowly drifting
-// gradient ribbons; dragging (rockPanRef) speeds the shimmer up for a subtle
-// interactive feel.
+// Fullscreen aurora backdrop rendered as a screen-space quad so it fills the
+// whole canvas while the mountain/rock sit in the top 4:3 band. A custom shader
+// blends tone-on-tone pastel tones into slowly drifting gradient ribbons;
+// dragging (rockPanRef) speeds the shimmer up for a subtle interactive feel.
 export default function AuroraBackdrop({
   panRef,
+  groundColor = "#bfa47d",
 }: {
   panRef?: RefObject<number>;
+  groundColor?: string;
 }) {
-  const { camera } = useThree();
-  const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
 
   const uniforms = useMemo(
@@ -164,19 +163,12 @@ export default function AuroraBackdrop({
       uAuroraA: { value: new THREE.Color("#fbf5e6") },
       uAuroraB: { value: new THREE.Color("#f0e7d2") },
       uAuroraC: { value: new THREE.Color("#e2d2b2") },
+      uMountain: { value: new THREE.Color(groundColor) },
     }),
-    [],
+    [groundColor],
   );
 
   useFrame((_, delta) => {
-    const mesh = meshRef.current;
-    const cam = camera as THREE.PerspectiveCamera;
-    if (mesh) {
-      // Place the plane straight ahead of the camera, facing it, so it tracks
-      // the climb and the drag pan without ever leaving a gap at the edges.
-      mesh.position.copy(cam.position).addScaledVector(BACK_FORWARD, DISTANCE);
-      mesh.rotation.copy(cam.rotation);
-    }
     const mat = materialRef.current;
     if (mat) {
       const vel = panRef?.current ?? 0;
@@ -190,14 +182,15 @@ export default function AuroraBackdrop({
   });
 
   return (
-    <mesh ref={meshRef} position={[0, 0, -50]} rotation={[-BACK_PITCH, 0, 0]}>
-      <planeGeometry args={[200, 200]} />
+    <mesh renderOrder={-1} frustumCulled={false}>
+      <planeGeometry args={[2, 2]} />
       <shaderMaterial
         ref={materialRef}
         uniforms={uniforms}
         vertexShader={VERTEX_SHADER}
         fragmentShader={FRAGMENT_SHADER}
         depthWrite={false}
+        depthTest={false}
         toneMapped={false}
       />
     </mesh>

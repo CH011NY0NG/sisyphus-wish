@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef /* , useState */ } from "react";
 import type { RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows } from "@react-three/drei";
@@ -11,6 +11,10 @@ import {
   DEFAULT_MOUNTAIN_PARAMS,
 } from "../lib/mountain";
 
+// The mountain/rock render with the original 4:3 projection, mapped into the
+// top band of the fullscreen canvas via a custom camera projection. The aurora
+// is a separate screen-space fullscreen quad, so the scene stays fullscreen
+// while the mountain/rock keep their exact original on-screen size.
 const CAMERA_Z = 36;
 const CAMERA_FOV = 44;
 const HALF_FOV_V = THREE.MathUtils.degToRad(CAMERA_FOV / 2);
@@ -19,11 +23,20 @@ const CAMERA_Y = CAMERA_Z * Math.tan(PITCH + HALF_FOV_V);
 const VIEW_DEPTH =
   CAMERA_Y * Math.sin(PITCH) + CAMERA_Z * Math.cos(PITCH);
 const WIDTH_MULTIPLIER = 3;
+const REF_ASPECT = 4 / 3;
 
 function leftEdgeX(aspect: number): number {
   const halfFovH = Math.atan(Math.tan(HALF_FOV_V) * aspect);
   return VIEW_DEPTH * Math.tan(halfFovH);
 }
+
+// Reference mountain length, independent of the live canvas aspect.
+const REF_LX = leftEdgeX(REF_ASPECT);
+const REF_WIDTH = 2 * REF_LX * WIDTH_MULTIPLIER;
+
+// Temp matrices for composing the band-mapped projection each frame.
+const PROJ_BAND = new THREE.Matrix4();
+const PROJ_TEMP = new THREE.Matrix4();
 
 // Drifting sand motes that stay in front of the camera (the parent group
 // follows the camera x/y). Normal blending with a mid-sand color so the
@@ -118,12 +131,10 @@ function Atmosphere({
     if (sunRef.current) {
       // Rock's progress up the mountain: 0% at the start (x=0), 100% at the
       // peak (x=width). This is stable even where the camera stops moving.
-      const lx = leftEdgeX(cam.aspect);
-      const width = 2 * lx * WIDTH_MULTIPLIER;
       const S = params.rockRadius * 3;
       const rockXM = (rockWorldXRef.current ?? 0) - S;
-      const progress = THREE.MathUtils.clamp(rockXM / width, 0, 1);
-      const y = THREE.MathUtils.lerp(-70, 3 * lx, progress);
+      const progress = THREE.MathUtils.clamp(rockXM / REF_WIDTH, 0, 1);
+      const y = THREE.MathUtils.lerp(-70, REF_WIDTH / 2, progress);
       sunRef.current.position.set(0, y, -46);
     }
   });
@@ -145,19 +156,16 @@ function Atmosphere({
 
 // The rock is decoupled from the camera: it rolls with the drag velocity and
 // the camera follows it (clamped), so the rock keeps rolling to the peak even
-// after the camera hits the drag limit.
+// after the camera hits the drag limit. It also rebuilds the 4:3 band
+// projection each frame, placing the mountain in the top ~1/3 of the screen.
 function CameraRig({
   params,
-  rockWorldXRef,
   rockPanRef,
-  pastPeakRef,
 }: {
   params: MountainParams;
-  rockWorldXRef: RefObject<number>;
   rockPanRef: RefObject<number>;
-  pastPeakRef: RefObject<boolean>;
 }) {
-  const { camera, gl } = useThree();
+  const { camera, gl, size } = useThree();
   const vel = useRef(0);
   const dragging = useRef(false);
   const camXRef = useRef(0);
@@ -214,39 +222,64 @@ function CameraRig({
 
   useFrame((_, delta) => {
     const perspective = camera as THREE.PerspectiveCamera;
-    const lx = leftEdgeX(perspective.aspect);
-    const width = 2 * lx * WIDTH_MULTIPLIER;
-    const S = params.rockRadius * 3;
-    // The camera follows the rock continuously — down the mountain, past its end,
-// and across the flat space behind it (no intermediate stop at the corner).
-    const minX = lx;
-    const maxX = pastPeakRef.current
-      ? S + 2 * width + S + lx
-      : S + width;
-
-    // Decay the pan velocity when not dragging (gives the rock inertia).
-    if (!dragging.current) {
-      if (Math.abs(vel.current) > 0.05) {
-        vel.current *= Math.pow(0.92, delta * 60);
-      } else {
-        vel.current = 0;
-      }
-    }
-
-    // The camera follows the rock (kept at a fixed screen offset), clamped to
-    // the pan range, and glides toward the target so releasing the peak clamp
-    // doesn't make the view jump.
-    const targetCamX = THREE.MathUtils.clamp(
-      (rockWorldXRef.current ?? 0) + lx - S / 2,
-      minX,
-      maxX,
+    // Rebuild the original 4:3 projection and map it into the top band of the
+    // fullscreen canvas: NDC y ∈ [-1,1] → [1-2·band, 1]. This keeps the
+    // mountain/rock pixel-identical to the original 4:3 scene while the aurora
+    // (a separate screen-space quad) fills the whole canvas.
+    perspective.aspect = REF_ASPECT;
+    perspective.fov = CAMERA_FOV;
+    perspective.updateProjectionMatrix();
+    const band = (size.width * 0.75) / size.height;
+    PROJ_BAND.set(
+      1,
+      0,
+      0,
+      0,
+      0,
+      band,
+      0,
+      1 - band,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
     );
+    const mapped = PROJ_TEMP.multiplyMatrices(
+      PROJ_BAND,
+      perspective.projectionMatrix,
+    );
+    perspective.projectionMatrix.copy(mapped);
+    perspective.projectionMatrixInverse.copy(mapped).invert();
+
+    const lx = leftEdgeX(perspective.aspect);
+    const width = REF_WIDTH;
+    const S = params.rockRadius * 3;
+    // Pan range covers the whole mountain (front edge to the back end).
+    const minX = lx;
+    const maxX = S + 2 * width + S + lx;
+
+    // Start the camera at the mountain's front.
     if (!positioned.current) {
-      camXRef.current = targetCamX;
+      camXRef.current = minX;
       positioned.current = true;
     }
-    camXRef.current += (targetCamX - camXRef.current) * Math.min(1, delta * 10);
-    const camX = camXRef.current;
+
+    // Direct left/right drag: the camera pans with the pointer, and keeps a
+    // little inertia when released (the mountain follows your finger).
+    if (dragging.current) {
+      camXRef.current += vel.current * delta * 60;
+    } else if (Math.abs(vel.current) > 0.05) {
+      vel.current *= Math.pow(0.92, delta * 60);
+      camXRef.current += vel.current * delta * 60;
+    } else {
+      vel.current = 0;
+    }
+    const camX = THREE.MathUtils.clamp(camXRef.current, minX, maxX);
+    camXRef.current = camX;
 
     // Height: flat while the mountain start hasn't reached the bottom-left
     // corner, then track the skyline (ridge at the camera center) so the view
@@ -273,37 +306,50 @@ function CameraRig({
 
 function AdaptiveMountain({
   params,
-  rockWorldXRef,
+  /* rockWorldXRef,
   rockPanRef,
   onAtPeak,
   rollDownRef,
   onRollDownDone,
   pastPeakRef,
-  behindMountainRef,
+  behindMountainRef, */
 }: {
   params: MountainParams;
-  rockWorldXRef: RefObject<number>;
+  /* rockWorldXRef: RefObject<number>;
   rockPanRef: RefObject<number>;
   onAtPeak: (v: boolean) => void;
   rollDownRef: RefObject<{ active: boolean; targetXM: number }>;
   onRollDownDone: () => void;
   pastPeakRef: RefObject<boolean>;
-  behindMountainRef: RefObject<boolean>;
+  behindMountainRef: RefObject<boolean>; */
 }) {
-  const { camera } = useThree();
-  const aspect = (camera as THREE.PerspectiveCamera).aspect;
-  const width = 2 * leftEdgeX(aspect) * WIDTH_MULTIPLIER;
   return (
     <MountainRange
-      width={width}
+      width={REF_WIDTH}
       params={params}
-      rockWorldXRef={rockWorldXRef}
+      /* rockWorldXRef={rockWorldXRef}
       rockPanRef={rockPanRef}
       onAtPeak={onAtPeak}
       rollDownRef={rollDownRef}
       onRollDownDone={onRollDownDone}
       pastPeakRef={pastPeakRef}
-      behindMountainRef={behindMountainRef}
+      behindMountainRef={behindMountainRef} */
+    />
+  );
+}
+
+// Contact shadows sit under the rock's final resting spot in the flat space
+// behind the mountain (world x = S + 2×width + S/2).
+function BehindShadows({ params }: { params: MountainParams }) {
+  const S = params.rockRadius * 3;
+  return (
+    <ContactShadows
+      position={[S + 2 * REF_WIDTH + S / 2, 0.02, 0]}
+      opacity={0.38}
+      scale={320}
+      blur={2.6}
+      far={26}
+      color="#d5d9de"
     />
   );
 }
@@ -317,11 +363,13 @@ export default function Scene({
 }: SceneProps) {
   const rockWorldXRef = useRef(0);
   const rockPanRef = useRef(0);
-  const rollDownRef = useRef({ active: false, targetXM: 0 });
-  const pastPeakRef = useRef(false);
-  const behindMountainRef = useRef(false);
+  /* const pastPeakRef = useRef(false); */
+  /* const rockPanRef = useRef(0);
+  const pastPeakRef = useRef(false); */
+  /* const rollDownRef = useRef({ active: false, targetXM: 0 }); */
+  /* const behindMountainRef = useRef(false);
   const [atPeak, setAtPeak] = useState(false);
-  const [rollingDown, setRollingDown] = useState(false);
+  const [rollingDown, setRollingDown] = useState(false); */
 
   return (
     <div className="scene-wrap">
@@ -333,7 +381,7 @@ export default function Scene({
         <color attach="background" args={["#ecdcc2"]} />
         <fog attach="fog" args={["#ecdcc2", 120, 300]} />
 
-        <AuroraBackdrop panRef={rockPanRef} />
+        <AuroraBackdrop groundColor={params.baseColor} />
         <Atmosphere rockWorldXRef={rockWorldXRef} params={params} />
 
         <ambientLight intensity={0.25} />
@@ -342,33 +390,24 @@ export default function Scene({
 
         <AdaptiveMountain
           params={params}
-          rockWorldXRef={rockWorldXRef}
+          /* rockWorldXRef={rockWorldXRef}
           rockPanRef={rockPanRef}
           onAtPeak={setAtPeak}
           rollDownRef={rollDownRef}
           onRollDownDone={() => setRollingDown(false)}
           pastPeakRef={pastPeakRef}
-          behindMountainRef={behindMountainRef}
+          behindMountainRef={behindMountainRef} */
         />
 
-        <ContactShadows
-          position={[141 + params.rockRadius * 3, 0.02, 0]}
-          opacity={0.38}
-          scale={320}
-          blur={2.6}
-          far={26}
-          color="#d5d9de"
-        />
+        <BehindShadows params={params} />
 
         <CameraRig
           params={params}
-          rockWorldXRef={rockWorldXRef}
           rockPanRef={rockPanRef}
-          pastPeakRef={pastPeakRef}
         />
       </Canvas>
 
-      {atPeak && !rollingDown && (
+      {/* {atPeak && !rollingDown && (
         <button
           type="button"
           className="peak-confirm"
@@ -380,7 +419,7 @@ export default function Scene({
         >
           확인
         </button>
-      )}
+      )} */}
     </div>
   );
 }
